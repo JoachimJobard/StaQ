@@ -1,0 +1,9 @@
+torch==2.4.0
+numpy==1.26.4
+scipy
+wandb
+matplotlib
+tensorboard
+tqdm
+gymnasium[box2d]==0.29.1
+minatar==1.0.15

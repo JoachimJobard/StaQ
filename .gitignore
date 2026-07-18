@@ -1,0 +1,11 @@
+logs/
+__pycache__/
+wandb/
+videos/
+results/
+*.el
+*.aux
+*.log
+*.out
+*.synctex*
+*.pdf
