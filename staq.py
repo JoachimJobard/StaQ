@@ -1,24 +1,32 @@
 import argparse
+from collections.abc import Iterable
 from copy import deepcopy
 from os.path import join
 from time import time
+from typing import cast
 
 import gymnasium as gym
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from gymnasium.wrappers import TimeLimit
-from torch.utils.tensorboard import SummaryWriter
+from gymnasium.wrappers.time_limit import TimeLimit
+from torch import nn
+from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from rl_tools import ChannelsFirst, ReplayMemory, Sampler, stable_kl_div, zero_linear
+from utils.rl_tools import (
+    ChannelsFirst,
+    ReplayMemory,
+    Sampler,
+    stable_kl_div,
+    zero_linear,
+)
 
 
 class StackedNN:
     """Stacked NN layers for an efficient batched forward pass."""
 
-    def __init__(self, ann, max_size, strides=None):
+    def __init__(self, ann: Iterable[nn.Module], max_size: int, strides=None):
         # ann should be iterable List[torch.nn.Module]
         self.sweights = []  # stacked weights, list of len L (layers) with elements of dims: (Niter, in_dim, out_dim)
         self.sbiases = []
@@ -35,7 +43,8 @@ class StackedNN:
                 self.layer_types.append('mlp')
             elif isinstance(f, nn.Conv2d):
                 self.sweights.append(f.weight.detach().clone()[None, ...])
-                self.sbiases.append(f.bias.detach().clone()[None, ...])
+                if f.bias is not None:
+                    self.sbiases.append(f.bias.detach().clone()[None, ...])
                 self.layer_types.append('conv')
             elif isinstance(f, nn.Flatten):
                 continue
@@ -48,6 +57,7 @@ class StackedNN:
         for layer_idx, (w, b, nl, layer_type) in enumerate(zip(self.sweights, self.sbiases, self.non_lin, self.layer_types)):
 
             if layer_type == 'conv':
+                assert self.strides is not None, "Strides must be provided for convolutional layers."
                 N, out_channels, in_channels, kernel_h, kernel_w = w.shape
                 if N != self.ensemble_size:
                     self.ensemble_size = N
@@ -96,9 +106,10 @@ class StackedNN:
                     w = w[1:]
                     b = b[1:]
                 w_new = f.weight.detach().clone()[None, ...]
-                b_new = f.bias.detach().clone()[None, ...]
                 self.sweights[idx] = torch.cat((w, w_new), 0) if w.shape[0] > 0 else w_new
-                self.sbiases[idx] = torch.cat((b, b_new), 0) if b.shape[0] > 0 else b_new
+                if f.bias is not None:
+                    b_new = f.bias.detach().clone()[None, ...]
+                    self.sbiases[idx] = torch.cat((b, b_new), 0) if b.shape[0] > 0 else b_new
                 idx += 1
 
     def decay(self, c):
@@ -108,7 +119,7 @@ class StackedNN:
 
 class StaQNet:
     def __init__(self, input_size, output_size, nb_hidden, hidden_width, memory_size, kl_weight, entropy_weight, use_w_correction,
-                 device=torch.device('cpu'), nl=nn.ReLU(inplace=True), network_type="mlp", cnn_config=None):
+                 device=None, nl=None, network_type="mlp", cnn_config: dict | None= None):
         super().__init__()
 
         assert nb_hidden > 0, "Number of hidden layers must be greater than 0."
@@ -123,6 +134,10 @@ class StaQNet:
         self.decay = kl_weight / (kl_weight + entropy_weight)
         self.use_w_correction = use_w_correction
         self.strides = None
+        if device is None:
+            device = torch.device('cpu')
+        if nl is None:
+            nl = nn.ReLU(inplace=True)
         if self.use_w_correction:
             self.w_correction = 1. / (1. - self.decay ** self.memory_size)
         else:
@@ -138,7 +153,7 @@ class StaQNet:
         # Frozen net
         self.froz_feat = None
         # self.froz_q = None
-        self.sig_q = None
+        self.sig_q = StackedNN([zero_linear(nn.Linear(hidden_width, output_size).to(self.device))], self.memory_size)  # frozen Q
 
         # Trainable mlp
         self.train_feat, self.train_q = self._get_new_mlps()
@@ -167,6 +182,7 @@ class StaQNet:
 
             return nn.Sequential(*ops).to(self.device), output_layer
         else:
+            assert self.network_config is not None, "CNN configuration must be provided for CNN network type."
             insize = self.input_size
             in_channels = insize[0]
             H, W = insize[1], insize[2]
@@ -203,6 +219,7 @@ class StaQNet:
     def parameters(self):
         if self.train_feat is not None:
             return [*self.train_feat.parameters(), *self.train_q.parameters()]
+        return []
 
     def train(self, train_mode):
         if self.train_feat is not None:
@@ -251,7 +268,8 @@ def numpy_argmax_policy(obs, dwexnns, device, ensemble=True):
     if ensemble:
         with torch.no_grad():
             dist = torch.distributions.Categorical(logits=get_logits_ensemble(dwexnns, obs, device))
-    return dist.probs.argmax(1).squeeze().cpu().numpy(), dist.entropy().squeeze().cpu().numpy()
+            probs= cast(torch.Tensor, dist.probs)
+        return probs.argmax(1).squeeze().cpu().numpy(), dist.entropy().squeeze().cpu().numpy()
 
 
 def numpy_egreedy_softpolicy(obs, dwexnns, eps, device):
@@ -262,10 +280,12 @@ def numpy_egreedy_softpolicy(obs, dwexnns, eps, device):
     return act, entrop
 
 
-def update_target(sources, targets=None, tau=None, update_type=None):
+def update_target(sources, targets: list|None=None, tau: float|None=None, update_type=None):
     if update_type == 'hard':
         targets = [deepcopy(source) for source in sources]
     elif update_type == 'soft':
+        assert targets is not None, "Targets must be provided for soft updates."
+        assert tau is not None, "Tau must be provided for soft updates."
         for source, target in zip(sources, targets):
             for target_param, param in zip(target.parameters(), source.parameters()):
                 target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
@@ -337,7 +357,7 @@ def run(logging_path, env_name='CartPole-v1', seed=0, timesteps=5_000_000, trans
 
     total_trans = 0
     eweight_fct = lambda x: (min(x / end_decay, 1) * final_ew + (1 - min(x / end_decay, 1)) * init_ew) / np.log(n_act)
-    qoptim = torch.optim.Adam([p for qfunc in qfuncs for p in qfunc.parameters()], lr=lr, weight_decay=l2_weight)
+    qoptim = torch.optim.adam.Adam([p for qfunc in qfuncs for p in qfunc.parameters()], lr=lr, weight_decay=l2_weight)
 
     qtars = update_target(qfuncs, update_type='hard')
 
@@ -431,13 +451,13 @@ def run(logging_path, env_name='CartPole-v1', seed=0, timesteps=5_000_000, trans
             if mode == 'mean':
                 targ = sum([qno.detach() for qno in qnos]) / n_ensemble
                 targ = scaled_rwd + gamma * (1 - db.terminated) * (targ + ent_term)
-                lossq = sum([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
-                             for qall in curr_qalls]) / n_ensemble
+                lossq = torch.stack([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
+                     for qall in curr_qalls]).mean()
             else:
                 targ = torch.hstack([qno.detach() for qno in qnos]).min(1, True)[0]
                 targ = scaled_rwd + gamma * (1 - db.terminated) * (targ + ent_term)
-                lossq = sum([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
-                             for qall in curr_qalls]) / n_ensemble
+                lossq = torch.stack([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
+                             for qall in curr_qalls]).mean()
 
             loss_logqdist = (((eweight * nol - sum(next_qalls) / n_ensemble) ** 2) * (1 - db.terminated)).mean()
             lossq.backward()
