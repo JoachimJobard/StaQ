@@ -1,0 +1,17 @@
+[project]
+name = "staq"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium[box2d]==0.29.1",
+    "matplotlib",
+    "minatar==1.0.15",
+    "numpy==1.26.4",
+    "scipy",
+    "tensorboard",
+    "torch==2.4.0",
+    "tqdm",
+    "wandb",
+]
