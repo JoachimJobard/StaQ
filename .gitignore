@@ -10,3 +10,4 @@ results/
 *.synctex*
 *.pdf
 .vscode/
+.venv/

@@ -1,7 +1,8 @@
 import os
+
 import torch
 
-from rl_tools import ReplayMemory
+from src.utils.rl_tools import ReplayMemory
 
 
 class BufferArchive:

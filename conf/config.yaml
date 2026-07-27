@@ -1,0 +1,7 @@
+defaults:
+  - base_config
+  - env: cartpole
+  - _self_
+
+wandb: true
+wandb_project: StaQ
