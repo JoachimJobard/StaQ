@@ -72,6 +72,7 @@ class ChannelsFirst(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         shape = env.observation_space.shape
+        assert shape is not None and len(shape) == 3, "ChannelsFirst wrapper expects an observation space with 3 dimensions (H, W, C)."
         self.observation_space = gym.spaces.Box(0, 255, (shape[2], shape[0], shape[1]), dtype=np.uint8)
 
     def observation(self, observation):

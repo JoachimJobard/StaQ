@@ -64,3 +64,21 @@ class ReplayMemory:
 
     def sample(self, batch_size, device=None):
         return self.sample_with_idxs(batch_size, device)[0]
+    
+    def _get_idexes(self, start_idx, end_idx):  # start and end indexes are relative to how old is the data
+        assert start_idx < end_idx
+        datastarts = self.write_idx if self.size == self.max_size else 0
+        lidx = (datastarts + start_idx) % self.max_size
+        ridx = (datastarts + end_idx) % self.max_size
+        return lidx, ridx
+
+    def get(self, key, start_idx=None, end_idx=None):  # start and end indexes are relative to how old is the data
+        if start_idx is None and end_idx is None:
+            return getattr(self.repmem, key)[:self.size]
+        else:
+            lidx, ridx = self._get_idexes(start_idx, end_idx)
+            if lidx < ridx:
+                return getattr(self.repmem, key)[lidx:ridx]
+            else:
+                return torch.cat([getattr(self.repmem, key)[lidx:],
+                                  getattr(self.repmem, key)[:ridx]], dim=0)

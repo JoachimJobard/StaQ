@@ -2,7 +2,7 @@ import os
 
 import torch
 
-from src.utils.rl_tools import ReplayMemory
+from src.utils.replay_memory import ReplayMemory
 
 
 class BufferArchive:
@@ -42,3 +42,26 @@ class BufferArchive:
     
     def save_manifest(self, config, total_trans, env_name, n_act, s_dim):
         torch.save({"format": "staq_buffer", "manifest": self.manifest, "config": config, "total_trans": total_trans, "env_name": env_name, "n_act": n_act, "s_dim": s_dim}, os.path.join(self.save_dir, "manifest.pt"))
+
+def load_buffer_archive(buffer_dir:str, buffer_number:int|None=None):
+    """Load a buffer archive from disk. The manifest is loaded and the buffers are loaded sequentially.
+
+    Args:
+        buffer_dir (str): the directory where the buffer archive is stored
+        buffer_number (int | None): the number of the buffer to load, if None loads all buffers
+    Returns:
+        list[dict]: a list of buffers, each buffer is a dict with keys "iteration", "size", "max_size", "write_idx", "buffer"
+    """
+    manifest = torch.load(os.path.join(buffer_dir, "manifest.pt"))
+    buffers = []
+    if buffer_number is None:
+        for entry in manifest["manifest"]:
+            fname = entry["filename"]
+            buffer = torch.load(os.path.join(buffer_dir, fname))
+            buffers.append(buffer)
+    else:
+        entry = manifest["manifest"][buffer_number]
+        fname = entry["filename"]
+        buffer = torch.load(os.path.join(buffer_dir, fname))
+        buffers.append(buffer)
+    return buffers

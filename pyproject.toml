@@ -5,11 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "gymnasium[box2d]==0.29.1",
+    "gymnasium[box2d,mujoco]==0.29.1",
     "hydra-core>=1.3.4",
     "matplotlib",
     "minatar==1.0.15",
     "numpy==1.26.4",
+    "pytest>=9.1.1",
     "scipy",
     "tensorboard",
     "torch==2.4.0",

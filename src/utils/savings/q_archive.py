@@ -25,7 +25,7 @@ import os
 
 import torch
 
-from dwex_nn import StackedNN
+from src.networks.stacked_nn import StackedNN
 
 
 def _snapshot(module_iterable, strides=None):

@@ -11,3 +11,5 @@ results/
 *.pdf
 .vscode/
 .venv/
+experiments/
+src/staq.egg-info/
