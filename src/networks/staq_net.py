@@ -44,7 +44,7 @@ class StaQNet:
         self.sig_q = StackedNN([zero_linear(nn.Linear(hidden_width, output_size).to(self.device))], self.memory_size)  # frozen Q
 
         # Trainable mlp
-        self.train_feat, self.train_q = self._get_new_mlps()
+        self.train_feat, self.train_q = self._get_networks()
 
     def __call__(self, x):
         return self.train_q(self.train_feat(x))  # returns new Q
@@ -58,7 +58,8 @@ class StaQNet:
                 return self.sig_q(self.froz_feat(x))[1:].sum(0) * self.eta * self.w_correction
             return self.sig_q(self.froz_feat(x)).sum(0) * self.eta * self.w_correction  # it was easier to put eta here
 
-    def _get_new_mlps(self):
+    def _get_networks(self):
+        # Since StaQ builds from previous updates, this is called only once at initialisation. The networks are then updated with update_sigq() and _update_staq_networks()
         if self.network_type == "mlp":
             insize = self.input_size
             ops = []
