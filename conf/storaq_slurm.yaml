@@ -24,9 +24,9 @@ hydra:
   sweep:
     dir: /data/tau/iceberg_1/titanic_1/users/${oc.env:USER}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
   launcher:
-    partition: tau
+    partition: tau,gpu-best
     timeout_min: 1440          # 24:00:00
-    cpus_per_task: 4          # matches cfg.torch_threads; more would sit idle
+    cpus_per_task: 8           # matches the sbatch allocation (cfg.torch_threads stays 4)
     mem_gb: 32
     gpus_per_node: 1
     nodes: 1

@@ -1,4 +1,3 @@
-from os.path import join
 from time import time
 from typing import cast
 
@@ -292,7 +291,8 @@ def main(cfg: DictConfig):
             # to_container needs the DictConfig, not the dataclass instance
             config=cast(dict, OmegaConf.to_container(cfg, resolve=True)),
             sync_tensorboard=True,
-            name=join(run_cfg.env_name, str(run_cfg.seed)),
+            name=run_cfg.run_name,
+            group=run_cfg.run_name.rsplit('_s', 1)[0],  # seeds of one condition together
             monitor_gym=True,
         )
     logging_path = HydraConfig.get().runtime.output_dir

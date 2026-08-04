@@ -62,6 +62,10 @@ class RunConfig:
 class AppConfig(RunConfig):
     wandb: bool = True
     wandb_project: str = "StaQ"
+    # Names the experimental condition: used for the wandb run name and for the
+    # hydra output/sweep subdirectory. Flavours override it to include their own
+    # knobs (see StoRAQConfig), so a mixed sweep stays navigable.
+    run_name: str = "${env_name}_staq_s${seed}"
 
 cs = ConfigStore.instance()
 cs.store(name="base_config", node=AppConfig)

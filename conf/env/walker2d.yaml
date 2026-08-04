@@ -1,3 +1,20 @@
 # @package _global_
+#
+# Classical MuJoCo setup, matching run/slurm/staq_mujoco.sbatch. Continuous
+# actions are discretised by ContToDiscreteActWrap (see make_envs), and the
+# network is a plain MLP. Values equal to the RunConfig default are listed
+# explicitly so this file documents the full published condition.
 env_name: Walker2d-v4
 network_type: mlp
+
+lr: 0.0001
+rwd_scale: 10.0
+mode: min             # RunConfig default is mean
+kl_weight: 10.0       # RunConfig default is 20.0
+end_decay: 1000000    # RunConfig default is 500_000
+target_type: hard
+init_eps: 0.05
+final_eps: 0.05
+batch_size: 256
+timesteps: 5000000
+eval_interval: 100000
