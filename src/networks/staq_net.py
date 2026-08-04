@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from networks.stacked_nn import StackedNN
-from utils.rl_tools import zero_linear
+from src.networks.stacked_nn import StackedNN
+from src.utils.rl_tools import zero_linear
 
 
 class StaQNet:

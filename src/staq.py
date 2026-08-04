@@ -9,7 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from networks.staq_net import StaQNet
+from src.networks.staq_net import StaQNet
 from src.config import AppConfig, RunConfig
 from src.utils.rl_tools import (
     _finish_action,
@@ -19,8 +19,8 @@ from src.utils.rl_tools import (
     stable_kl_div,
     update_target,
 )
-from utils.replay_memory import ReplayMemory
-from utils.sampler import Sampler
+from src.utils.replay_memory import ReplayMemory
+from src.utils.sampler import Sampler
 
 
 class StaQTrainer:
