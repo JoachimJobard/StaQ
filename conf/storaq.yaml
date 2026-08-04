@@ -1,0 +1,16 @@
+defaults:
+  - storaq_config
+  - env: cartpole
+  - _self_
+
+wandb: true
+wandb_project: StaQ
+
+hydra:
+  run:
+    dir: outputs/${run_name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${run_name}
+  job:
+    chdir: false

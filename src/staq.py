@@ -29,7 +29,7 @@ class StaQTrainer:
         self.cfg = cfg
         assert cfg.target_type in ['hard', 'soft']
         assert cfg.mode in ['mean', 'min']
-        torch.set_num_threads(2)
+        torch.set_num_threads(cfg.torch_threads)
         torch.manual_seed(cfg.seed)
         np.random.seed(cfg.seed)
         self.device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -45,20 +45,7 @@ class StaQTrainer:
         self.logger = SummaryWriter(logging_path)
 
         self.cnn_config = make_network_type(cfg.network_type, cfg.env_name)
-        self.qfuncs = [StaQNet(self.s_dim, 
-                               self.n_act, 
-                               nb_hidden=cfg.nb_hidden, 
-                               hidden_width=cfg.hidden_width, 
-                               memory_size=cfg.memory_size,
-                               use_w_correction=cfg.w_correction,
-                               kl_weight = cfg.kl_weight,
-                               entropy_weight = cfg.init_ew,
-                               device=self.device,
-                               network_type=cfg.network_type,
-                               cnn_config=self.cnn_config) for _ in range(cfg.n_ensemble)]
-        self.q_optim = torch.optim.Adam([p for qfunc in self.qfuncs for p in qfunc.parameters()], lr=cfg.lr, weight_decay=cfg.l2_weight)
-        self.qtars = update_target(self.qfuncs, update_type='hard') # initialize as the first q funcs
-
+        self._init_qfuncs()
         self.repmem = ReplayMemory(cfg.rep_mem_size, self.s_dim, self.device, obs_type=self.obs_type)
 
         self.total_trans = 0
@@ -85,6 +72,7 @@ class StaQTrainer:
             self._log("timings/training", training_time_elapsed, self.total_trans)
             self._log("timings/total", self.total_time_elapsed, self.total_trans)
             self._log('loss/max_abs_reward', self.sampler.max_abs_reward, self.total_trans)
+            self._log_iteration()
 
             self.progress_bar.set_postfix({
                 'train/return': self.latest_train_return,
@@ -93,6 +81,7 @@ class StaQTrainer:
             self.progress_bar.update(self.cfg.trans_per_iter)
 
         self.progress_bar.close()
+        self.logger.close()
 
 
     def evaluate_policy(self):
@@ -230,6 +219,26 @@ class StaQTrainer:
         rollout_time_elapsed = time() - rollout_start_time
         self._log('timings/rollout', rollout_time_elapsed, self.total_trans)
 
+    def _make_qfuncs(self) -> list:
+        # Override in a flavour to change the network class; the optimizer and
+        # target plumbing in _init_qfuncs stays shared.
+        return [StaQNet(self.s_dim,
+                                       self.n_act,
+                                       nb_hidden=self.cfg.nb_hidden,
+                                       hidden_width=self.cfg.hidden_width,
+                                       memory_size=self.cfg.memory_size,
+                                       use_w_correction=self.cfg.w_correction,
+                                       kl_weight = self.cfg.kl_weight,
+                                       entropy_weight = self.cfg.init_ew,
+                                       device=self.device,
+                                       network_type=self.cfg.network_type,
+                                       cnn_config=self.cnn_config) for _ in range(self.cfg.n_ensemble)]
+
+    def _init_qfuncs(self):
+        self.qfuncs = self._make_qfuncs()
+        self.q_optim = torch.optim.Adam([p for qfunc in self.qfuncs for p in qfunc.parameters()], lr=self.cfg.lr, weight_decay=self.cfg.l2_weight)
+        self.qtars = update_target(self.qfuncs, update_type='hard') # initialize as the first q funcs
+
     def entropy_weight_function(self, t:int) -> float:
         return linear_schedule(t, self.cfg.init_ew, self.cfg.final_ew, self.cfg.end_decay) / np.log(self.n_act)
 
@@ -240,6 +249,9 @@ class StaQTrainer:
         obs = torch.tensor(obs[None, :].astype(np.float32), device=self.device)
         with torch.no_grad():
             return torch.distributions.Categorical(logits=self.get_logits_ensemble_torch(self.qfuncs, obs))
+
+    def _log_iteration(self):
+        """Hook for flavour-specific per-iteration diagnostics. No-op in plain StaQ."""
 
     def _log(self, tag, value, step=None):
         self.logger.add_scalar(tag, value, self.total_trans if step is None else step)
@@ -262,6 +274,10 @@ class StaQTrainer:
 
     def get_logits_ensemble_torch(self,qfuncs, obs, no_old=False):
         return sum([qfunc.get_logits(obs, no_old) for qfunc in qfuncs]) / len(qfuncs)
+
+    @property
+    def iter(self) -> int:
+        return self.total_trans // self.cfg.trans_per_iter
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")

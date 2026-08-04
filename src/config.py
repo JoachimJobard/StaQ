@@ -11,6 +11,11 @@ class RunConfig:
     # NB: the log directory is supplied by the caller (Hydra's runtime.output_dir),
     # not configured here.
     device:str='cuda'
+    # Torch intra-op threads. The matmuls are small (256x256) and go to the GPU
+    # when device=cuda, so the CPU-bound work is mostly single-threaded MuJoCo
+    # stepping -- past ~4 threads the sync overhead outweighs the parallelism.
+    # Keep this <= the job's cpus_per_task.
+    torch_threads:int=4
 
     # ---------- Environment ----------
     env_name: str = 'CartPole-v1'

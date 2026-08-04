@@ -1,0 +1,43 @@
+# Cluster entry point: same config as storaq.yaml, but multiruns are dispatched
+# to Slurm via submitit instead of running locally. Parameters mirror
+# run/slurm/staq_trunk_hopper.sbatch.
+#
+# Requires the launcher plugin once:   uv add hydra-submitit-launcher
+#
+#   uv run python -m staq_flavours.storaq --config-name=storaq_slurm -m \
+#       env=walker2d \
+#       lora.max_rank=2,4,8,16 \
+#       lora.freeze_non_lora=true,false \
+#       seed=0,1,2,3,4
+#
+# That is 4 x 2 x 5 = 40 jobs, submitted as one Slurm array.
+defaults:
+  - storaq
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+# Heavy outputs (tensorboard, wandb, submitit logs) go to the big /data space
+# rather than the quota-limited home, as in the sbatch scripts.
+hydra:
+  sweep:
+    dir: /data/tau/iceberg_1/titanic_1/users/${oc.env:USER}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    partition: tau
+    timeout_min: 1440          # 24:00:00
+    cpus_per_task: 4          # matches cfg.torch_threads; more would sit idle
+    mem_gb: 32
+    gpus_per_node: 1
+    nodes: 1
+    tasks_per_node: 1
+    # CUDA 13 (torch cu130) needs sm_75+; excludes volta (V100) and pascal.
+    constraint: "ampere|hopper|turing|rtx"
+    # Cap concurrent array tasks so the sweep does not monopolise the partition.
+    array_parallelism: 16
+    # Run on the compute node before the job starts. The venv is reused via
+    # sys.executable, so uv sync is only needed if it is not on a shared FS.
+    setup:
+      - export PATH="$HOME/.local/bin:$PATH"
+      - export WANDB_DIR="/data/tau/iceberg_1/titanic_1/users/$USER/staq/wandb"
+      - mkdir -p "$WANDB_DIR"

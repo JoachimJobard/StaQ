@@ -1,0 +1,3 @@
+# @package _global_
+env_name: Walker2d-v4
+network_type: mlp

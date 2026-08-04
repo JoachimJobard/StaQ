@@ -104,6 +104,9 @@ class StaQNet:
 
             return nn.Sequential(*ops).to(self.device), output_layer
 
+    def _feat_for_archive(self):
+        return self.train_feat
+
     def parameters(self):
         if self.train_feat is not None:
             return [*self.train_feat.parameters(), *self.train_q.parameters()]
@@ -124,12 +127,13 @@ class StaQNet:
 
     def update_sigq(self, decay=True):
         # merge frozen and trainable MLPs and delete oldest function if necessary
+        feat = self._feat_for_archive()
         self.train_feat.train(False)
         if self.froz_feat is None:  # building first frozen feat network
-            self.froz_feat = StackedNN(self.train_feat, self.memory_size, strides=self.strides)
+            self.froz_feat = StackedNN(feat, self.memory_size, strides=self.strides)
             self.sig_q = StackedNN([self.train_q], self.memory_size)
         else:
-            self.froz_feat.push(self.train_feat)
+            self.froz_feat.push(feat)
             if decay:
                 self.sig_q.decay(self.decay)
             self.sig_q.push([self.train_q])

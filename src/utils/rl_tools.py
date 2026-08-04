@@ -36,6 +36,11 @@ def make_envs(env_name)->tuple[gym.Env, gym.Env, torch.dtype]:
         env_eval = ChannelsFirst(gym.make(env_name))
         env = TimeLimit(env, max_episode_steps=5000)
         env_eval = TimeLimit(env_eval, max_episode_steps=5000)
+    elif env_name in ['Hopper-v4', 'Ant-v4', 'Walker2d-v4', 'HalfCheetah-v4', 'Humanoid-v4']:
+        env = gym.make(env_name, render_mode='rgb_array')
+        env_eval = gym.make(env_name, render_mode='rgb_array')
+        env = ContToDiscreteActWrap(env)
+        env_eval = ContToDiscreteActWrap(env_eval)
     else:
         env = gym.make(env_name)
         env_eval = gym.make(env_name)
@@ -77,3 +82,17 @@ class ChannelsFirst(gym.ObservationWrapper):
 
     def observation(self, observation):
         return observation.swapaxes(0, 2)
+
+class ContToDiscreteActWrap(gym.ActionWrapper):
+    def __init__(self, env:gym.Env):
+        super().__init__(env)
+        self.neutral_action = (env.action_space.low + env.action_space.high) / 2 # type: ignore
+        self.dim_base = len(self.neutral_action)
+        self.action_space = gym.spaces.Discrete(2 * self.dim_base + 1)
+
+    def action(self, a):
+        act = self.neutral_action.copy()
+        if a:
+            ind = (a - 1) % self.dim_base
+            act[ind] = self.env.action_space.low[ind] if a <= self.dim_base else self.env.action_space.high[ind] # type: ignore
+        return act
