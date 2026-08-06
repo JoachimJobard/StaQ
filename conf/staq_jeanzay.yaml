@@ -26,7 +26,9 @@ hydra:
     # create a directory literally named '$WORK' under the launch cwd.
     dir: ${oc.env:WORK}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
   launcher:
-    account: uhf25dd@v100     # the @v100 suffix picks the allocation, not the hardware
+    # The Slurm account is the PROJECT (see `idrproj`), not the login name; the
+    # @v100 suffix picks which of the project's allocations is billed.
+    account: ksr@v100
     partition: gpu_p13        # no constraint: 16g and 32g nodes both fine -> wider pool
     qos: qos_gpu-t4           # required for timeout_min > 1200
     timeout_min: 2880
