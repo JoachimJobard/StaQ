@@ -1,0 +1,49 @@
+# Cluster entry point for the BASELINE StaQ, so its runs land next to the StoRAQ
+# ones with the same naming and the same resources.
+#
+# Requires the launcher plugin once:   uv add hydra-submitit-launcher
+#
+#   uv run python -m src.staq --config-name=staq_jeanzay -m \
+#       env=walker2d seed=0,1,2,3,4
+#
+# Inspect the resolved Slurm parameters without submitting:
+#   ... --cfg hydra -p hydra.launcher --resolve
+#
+# NOTE: the hydra.launcher block below is duplicated in conf/storaq_jeanzay.yaml.
+# Kept inline deliberately -- these are cluster parameters, and a divergence here
+# costs a resubmission, whereas sharing them adds a resolution order that fails
+# only at submit time. Change both together.
+defaults:
+  - config
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+hydra:
+  sweep:
+    # oc.env, not $WORK: OmegaConf does no shell expansion, so "$WORK" would
+    # create a directory literally named '$WORK' under the launch cwd.
+    dir: ${oc.env:WORK}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    partition: gpu_p13        # no constraint: 16g and 32g nodes both fine -> wider pool
+    qos: qos_gpu-t4           # required for timeout_min > 1200
+    timeout_min: 2880
+    cpus_per_task: 10         # 40 cores / 4 GPUs on gpu_p13
+    mem_gb: null              # --mem must not be used on Jean Zay
+    gpus_per_node: 1
+    nodes: 1
+    tasks_per_node: 1
+    # = sweep width: qos_gpu-t4 caps concurrent GPUs/jobs per user well below the
+    # t3 limits, so a larger value here just parks jobs in the queue.
+    array_parallelism: 5
+    additional_parameters:
+      account: uhf25dd@v100
+      hint: nomultithread
+    setup:
+      # Compute nodes have no internet: online wandb would train for hours and
+      # then die on a network timeout. Sync from a node that has internet.
+      - export WANDB_MODE=offline
+      - export WANDB_DIR="$WORK/staq/wandb"
+      - export WANDB_CACHE_DIR="$WORK/staq/wandb_cache"
+      - mkdir -p "$WANDB_DIR" "$WANDB_CACHE_DIR"
