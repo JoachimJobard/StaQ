@@ -26,20 +26,20 @@ hydra:
     # create a directory literally named '$WORK' under the launch cwd.
     dir: ${oc.env:WORK}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
   launcher:
+    account: uhf25dd@v100     # the @v100 suffix picks the allocation, not the hardware
     partition: gpu_p13        # no constraint: 16g and 32g nodes both fine -> wider pool
     qos: qos_gpu-t4           # required for timeout_min > 1200
     timeout_min: 2880
     cpus_per_task: 10         # 40 cores / 4 GPUs on gpu_p13
-    mem_gb: null              # --mem must not be used on Jean Zay
     gpus_per_node: 1
-    nodes: 1
-    tasks_per_node: 1
-    # = sweep width: qos_gpu-t4 caps concurrent GPUs/jobs per user well below the
-    # t3 limits, so a larger value here just parks jobs in the queue.
+    # nodes/tasks_per_node default to 1, and mem_gb is left at its None default
+    # on purpose: Jean Zay allocates memory per core, --mem must not be sent.
+    #
+    # array_parallelism = sweep width: qos_gpu-t4 caps concurrent GPUs/jobs per
+    # user well below the t3 limits, so a larger value just parks jobs in queue.
     array_parallelism: 5
     additional_parameters:
-      account: uhf25dd@v100
-      hint: nomultithread
+      hint: nomultithread     # no native field for --hint
     setup:
       # Compute nodes have no internet: online wandb would train for hours and
       # then die on a network timeout. Sync from a node that has internet.
