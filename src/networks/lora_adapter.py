@@ -55,9 +55,11 @@ class LoRALinear(nn.Module):
             raise ValueError(f"Unknown rebaseline mode: {self.warm_start}")
         self.snapshot_base()
         self.reset_lora_parameters()
-        # Only the adapters are stale: under both modes the base either did not move
-        # ("keep_base") or moved by a legitimate update ("merged"), so its Adam
-        # moments stay meaningful -- as in plain StaQ, which never resets them.
+        # Only the adapters are stale. The base's Adam moments stay meaningful under
+        # both modes: "merged" moves it by a legitimate update, and "keep_base" leaves
+        # it untouched here -- though note set_phase(full=True) then unfreezes it, so
+        # the *next* full iteration retrains it either way. "keep_base" therefore means
+        # "do not fold the adapter in", NOT "the base is preserved".
         return [self.lora_A, self.lora_B]
 
     @property
@@ -68,7 +70,7 @@ class LoRALinear(nn.Module):
     @torch.no_grad()
     def snapshot_base(self):
         """Record the base weights so the next full update can be measured against them."""
-        self._w_snapshot = self.linear.weight.detach().clone()
+        self._w_snapshot = self.linear.weight.detach().clone() # the way snapshots are made right now is not saving any memory, in fact we add more memory with the storage of adaptaters. But it's ok since this is still a prototype. #TODO: more memory efficient snapshotting of the base weights
 
     @torch.no_grad()
     def base_update_svals(self):

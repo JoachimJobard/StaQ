@@ -50,6 +50,9 @@ class StoRAQTrainer(StaQTrainer):
         # Remembered for _log_iteration: total_trans has advanced by then, so
         # self.iter no longer names the iteration this phase belongs to.
         self._phase_full, self._phase_r, self._phase_iter = full, r, self.iter
+        self._apply_phase(full, r)  # update the qfuncs to the new phase
+
+    def _apply_phase(self, full, r):
         if full:
             stale = [p for q in self.qfuncs for p in q.rebaseline()]
             for p in stale:

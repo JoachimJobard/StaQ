@@ -1,0 +1,35 @@
+# Jean Zay entry point for the shadow ablation. REQUIRES PYTORCH 2.4 ON V100.
+#
+#   uv run python -m staq_flavours.storaq_ablation --config-name=storaq_ablation_jeanzay -m \
+#       env=walker2d lora.max_rank=2,4,8,16 seed=0,1,2,3,4
+#
+# NOTE: trains a second (shadow) network every grad step, so timings/* from these
+# runs are NOT comparable with the main sweep. Only the return curves are.
+#
+# NOTE: the hydra.launcher block is duplicated in conf/staq_jeanzay.yaml and
+# conf/storaq_jeanzay.yaml. Change them together.
+defaults:
+  - storaq_ablation
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+hydra:
+  sweep:
+    dir: ${oc.env:WORK}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    account: ksr@v100
+    partition: gpu_p13
+    qos: qos_gpu-t4
+    timeout_min: 2880
+    cpus_per_task: 10
+    gpus_per_node: 1
+    array_parallelism: 5
+    additional_parameters:
+      hint: nomultithread
+    setup:
+      - export WANDB_MODE=offline
+      - export WANDB_DIR="$WORK/staq/wandb"
+      - export WANDB_CACHE_DIR="$WORK/staq/wandb_cache"
+      - mkdir -p "$WANDB_DIR" "$WANDB_CACHE_DIR"

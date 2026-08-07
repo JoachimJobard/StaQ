@@ -151,6 +151,7 @@ class StaQTrainer:
                 max_q_ratio = 0
 
             self.q_optim.step()
+            self._extra_grad_step(db, targ, nologits, idxs)
             grad_steps += 1
 
     def _update_staq_networks(self, old_logits_tilde, testb, old_dist):
@@ -222,21 +223,24 @@ class StaQTrainer:
         # Override in a flavour to change the network class; the optimizer and
         # target plumbing in _init_qfuncs stays shared.
         return [StaQNet(self.s_dim,
-                                       self.n_act,
-                                       nb_hidden=self.cfg.nb_hidden,
-                                       hidden_width=self.cfg.hidden_width,
-                                       memory_size=self.cfg.memory_size,
-                                       use_w_correction=self.cfg.w_correction,
-                                       kl_weight = self.cfg.kl_weight,
-                                       entropy_weight = self.cfg.init_ew,
-                                       device=self.device,
-                                       network_type=self.cfg.network_type,
-                                       cnn_config=self.cnn_config) for _ in range(self.cfg.n_ensemble)]
+                        self.n_act,
+                        nb_hidden=self.cfg.nb_hidden,
+                        hidden_width=self.cfg.hidden_width,
+                        memory_size=self.cfg.memory_size,
+                        use_w_correction=self.cfg.w_correction,
+                        kl_weight = self.cfg.kl_weight,
+                        entropy_weight = self.cfg.init_ew,
+                        device=self.device,
+                        network_type=self.cfg.network_type,
+                        cnn_config=self.cnn_config) for _ in range(self.cfg.n_ensemble)]
 
     def _init_qfuncs(self):
         self.qfuncs = self._make_qfuncs()
         self.q_optim = torch.optim.Adam([p for qfunc in self.qfuncs for p in qfunc.parameters()], lr=self.cfg.lr, weight_decay=self.cfg.l2_weight)
         self.qtars = update_target(self.qfuncs, update_type='hard') # initialize as the first q funcs
+
+    def _extra_grad_step(self, db, targets, nologits, idxs):
+        """hook for extra gradient steps"""
 
     def entropy_weight_function(self, t:int) -> float:
         return linear_schedule(t, self.cfg.init_ew, self.cfg.final_ew, self.cfg.end_decay) / np.log(self.n_act)

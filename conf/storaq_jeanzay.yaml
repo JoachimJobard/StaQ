@@ -1,0 +1,53 @@
+# Jean Zay entry point for StoRAQ. REQUIRES PYTORCH 2.4 ON V100.
+#
+# Requires the launcher plugin once:   uv add hydra-submitit-launcher
+#
+#   uv run python -m staq_flavours.storaq --config-name=storaq_jeanzay -m \
+#       env=walker2d \
+#       lora.max_rank=2,4,8,16 \
+#       lora.freeze_non_lora=true,false \
+#       seed=0,1,2,3,4
+#
+# Inspect the resolved Slurm parameters without submitting:
+#   ... --cfg hydra -p hydra.launcher --resolve
+#
+# NOTE: the hydra.launcher block below is duplicated in conf/staq_jeanzay.yaml and
+# conf/storaq_ablation_jeanzay.yaml. Kept inline deliberately -- these are cluster
+# parameters, and a divergence here costs a resubmission, whereas sharing them adds
+# a resolution order that fails only at submit time. Change them together.
+defaults:
+  - storaq
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+hydra:
+  sweep:
+    # oc.env, not $WORK: OmegaConf does no shell expansion, so "$WORK" would
+    # create a directory literally named '$WORK' under the launch cwd.
+    dir: ${oc.env:WORK}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    # The Slurm account is the PROJECT (see `idrproj`), not the login name; the
+    # @v100 suffix picks which of the project's allocations is billed.
+    account: ksr@v100
+    partition: gpu_p13        # no constraint: 16g and 32g nodes both fine -> wider pool
+    qos: qos_gpu-t4           # required for timeout_min > 1200
+    timeout_min: 2880
+    cpus_per_task: 10         # 40 cores / 4 GPUs on gpu_p13
+    gpus_per_node: 1
+    # nodes/tasks_per_node default to 1, and mem_gb is left at its None default
+    # on purpose: Jean Zay allocates memory per core, --mem must not be sent.
+    #
+    # array_parallelism = sweep width: qos_gpu-t4 caps concurrent GPUs/jobs per
+    # user well below the t3 limits, so a larger value just parks jobs in queue.
+    array_parallelism: 5
+    additional_parameters:
+      hint: nomultithread     # no native field for --hint
+    setup:
+      # Compute nodes have no internet: online wandb would train for hours and
+      # then die on a network timeout. Sync from a node that has internet.
+      - export WANDB_MODE=offline
+      - export WANDB_DIR="$WORK/staq/wandb"
+      - export WANDB_CACHE_DIR="$WORK/staq/wandb_cache"
+      - mkdir -p "$WANDB_DIR" "$WANDB_CACHE_DIR"
