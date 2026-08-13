@@ -55,7 +55,7 @@ def make_network_type(network_type:str, env_name:str):
         if env_name.startswith('MinAtar'):
             cnn_config = {'channels': [16],
                           'kernel_size': [3],
-                          'stride': [1]}
+                          'strides': [1]}
         else:
             raise NotImplementedError(f"cnn network type not implemented for env {env_name}")
     else:

@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 
 from src.networks.lora_adapter import LoRALinear
@@ -33,7 +34,40 @@ class SToRAQNet(StaQNet):
             output_layer = zero_linear(nn.Linear(self.hidden_width, self.output_size).to(self.device))
             return nn.Sequential(*ops).to(self.device), output_layer
         else:
-            raise NotImplementedError("CNN network type is not implemented for SToRAQNet.")
+            assert self.network_config is not None, "CNN configuration must be provided for CNN network type."
+            insize = self.input_size
+            in_channels = insize[0]
+            H, W = insize[1], insize[2]
+            ops = []
+
+            # Build CNN from config
+            current_channels = in_channels
+            self.strides = self.network_config['strides']
+            for out_channels, ker_size, stride in zip(self.network_config['channels'], self.network_config['kernel_size'], self.network_config['strides']):
+                ops.extend([
+                    nn.Conv2d(current_channels, out_channels,
+                                kernel_size=ker_size, stride=stride),
+                    self.nl
+                ])
+                current_channels = out_channels
+
+            # Flatten and get output size
+            ops.append(nn.Flatten())
+            cnn = nn.Sequential(*ops).to(self.device)
+
+            with torch.no_grad():
+                sample_input = torch.zeros(1, in_channels, H, W).to(self.device)
+                n_flatten = cnn(sample_input).shape[1]
+
+            # Add final linear layer LoRA version
+            linear = nn.Linear(n_flatten, self.hidden_width).to(self.device)
+            lora_linear = LoRALinear(linear, self.max_rank,warm_start=self.warm_start, alpha=self.alpha).to(self.device)
+            ops.append(lora_linear)
+            ops.append(self.nl)
+
+            output_layer = zero_linear(nn.Linear(self.hidden_width, self.output_size).to(self.device))
+
+            return nn.Sequential(*ops).to(self.device), output_layer
 
     def _feat_for_archive(self): # Merge the LoRA parameters for saving
         return nn.Sequential(*[layer.merged() if isinstance(layer, LoRALinear) else layer for layer in self.train_feat]).to(self.device)

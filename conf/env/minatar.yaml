@@ -1,0 +1,27 @@
+# @package _global_
+#
+# MinAtar setup, transcribed from the pre-Hydra launch script
+# (run/staq_minatar.sh + the sbatch wrapper). Observations are (C, H, W) frames
+# (see ChannelsFirst in make_envs), so the trunk is a CNN whose shape comes from
+# make_network_type: one 3x3/stride-1 conv with 16 channels, flattened into a
+# single hidden Linear. Note that the CNN branch of StaQNet._get_networks builds
+# exactly one hidden Linear regardless of nb_hidden -- that key is inert here.
+#
+# Values equal to the RunConfig default are listed explicitly so this file
+# documents the full published condition. Pass the concrete game on the command
+# line, e.g. env_name=MinAtar/Asterix-v1.
+env_name: MinAtar/Breakout-v1
+network_type: cnn
+
+lr: 0.0001
+rwd_scale: 200.0      # RunConfig default is 10.0
+mode: mean
+kl_weight: 20.0
+end_decay: 1000000    # RunConfig default is 500_000
+target_type: hard
+init_eps: 0.05
+final_eps: 0.05
+batch_size: 256
+hidden_width: 128     # was --nb-neurone-perit; RunConfig default is 256
+timesteps: 5000000    # was --max-trans
+eval_interval: 100000

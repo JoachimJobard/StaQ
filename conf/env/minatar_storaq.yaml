@@ -1,0 +1,21 @@
+# @package _global_
+#
+# MinAtar for the StoRAQ flavour. Everything env-side comes from env/minatar;
+# this file only re-points the LoRA defaults, which are written for the MLP
+# trunk and are wrong for a CNN. Do not select this file with a plain StaQ run
+# (conf/config.yaml): AppConfig has no `lora` node and composition will fail.
+defaults:
+  - minatar
+
+lora:
+  # The CNN trunk has a single hidden Linear, so index 0 is the only one that
+  # exists. The MLP default of [1] would silently produce zero LoRALinear
+  # layers: no adapters, no rank schedule, empty lora/* logs, and a run that
+  # looks healthy while being plain StaQ.
+  lora_layers_index: [0]
+  # The adapter is cheaper than the dense layer only when
+  # r * (in + out) < in * out. With a 10x10 MinAtar frame the flatten is
+  # 16*8*8 = 1024, so for a 1024x128 hidden layer the break-even rank is
+  # 1024*128 / 1152 ~= 113 -- the MLP default of 128 costs *more* than not
+  # factorising at all. Sweep below this, e.g. lora.max_rank=8,16,32.
+  max_rank: 32
