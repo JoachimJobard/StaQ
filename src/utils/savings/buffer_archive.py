@@ -52,16 +52,20 @@ def load_buffer_archive(buffer_dir:str, buffer_number:int|None=None):
     Returns:
         list[dict]: a list of buffers, each buffer is a dict with keys "iteration", "size", "max_size", "write_idx", "buffer"
     """
-    manifest = torch.load(os.path.join(buffer_dir, "manifest.pt"))
+    # weights_only=False is explicit, not incidental: torch 2.6 flipped the
+    # default to True, and these archives store numpy scalars in the manifest
+    # and the buffer config, which the restricted unpickler rejects. Matches
+    # load_inference_checkpoint. The files are our own training output.
+    manifest = torch.load(os.path.join(buffer_dir, "manifest.pt"), weights_only=False)
     buffers = []
     if buffer_number is None:
         for entry in manifest["manifest"]:
             fname = entry["filename"]
-            buffer = torch.load(os.path.join(buffer_dir, fname))
+            buffer = torch.load(os.path.join(buffer_dir, fname), weights_only=False)
             buffers.append(buffer)
     else:
         entry = manifest["manifest"][buffer_number]
         fname = entry["filename"]
-        buffer = torch.load(os.path.join(buffer_dir, fname))
+        buffer = torch.load(os.path.join(buffer_dir, fname), weights_only=False)
         buffers.append(buffer)
     return buffers
