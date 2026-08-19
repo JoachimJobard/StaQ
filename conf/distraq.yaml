@@ -1,0 +1,28 @@
+# Local entry point for DistraQ: the archive is replaced by a single student
+# network holding the running sum, refreshed by self-distillation each iteration.
+#
+#   uv run python -m staq_flavours.distraq env=cartpole
+#   uv run python -m staq_flavours.distraq -m env=walker2d student.width=256,512 seed=0,1,2
+defaults:
+  - distraq_config
+  - env: cartpole
+  - _self_
+
+wandb: true
+wandb_project: StaQ
+
+# w_correction = 1/(1 - decay**memory_size) compensates for truncating the
+# geometric sum at memory_size. The student holds the untruncated sum, so there
+# is nothing to correct -- and since it multiplies the logits it acts as a
+# temperature, which would silently shift this flavour off the StaQ baseline.
+# It also makes _update_staq_networks' old_logits_tilde adjustment meaningless.
+w_correction: false
+
+hydra:
+  run:
+    dir: outputs/${run_name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${run_name}
+  job:
+    chdir: false

@@ -1,0 +1,45 @@
+# tau-cluster entry point for DistraQ.
+#
+# Requires the launcher plugin once:   uv add hydra-submitit-launcher
+#
+#   uv run python -m staq_flavours.distraq --config-name=distraq_slurm -m \
+#       env=walker2d \
+#       student.distil_steps=100,200,500 \
+#       seed=0,1,2,3,4
+#
+# Inspect the resolved Slurm parameters without submitting:
+#   ... --cfg hydra -p hydra.launcher --resolve
+#
+# NOTE: the hydra.launcher block below is duplicated in conf/staq_slurm.yaml and
+# conf/storaq_slurm.yaml. Kept inline deliberately -- these are cluster
+# parameters, and a divergence here costs a resubmission, whereas sharing them
+# adds a resolution order that fails only at submit time. Change them together.
+#
+# Run the StaQ baseline (conf/staq_slurm.yaml) at the same seeds: the whole
+# point is the eval/return gap against it, plus timings/precompute, which should
+# collapse now that get_logits reads one student instead of 301 iterates.
+defaults:
+  - distraq
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+hydra:
+  sweep:
+    dir: /data/tau/iceberg_1/titanic_1/users/${oc.env:USER}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    partition: tau,gpu-best
+    timeout_min: 1440          # 24:00:00
+    cpus_per_task: 8           # matches the sbatch allocation (cfg.torch_threads stays 4)
+    mem_gb: 32
+    gpus_per_node: 1
+    nodes: 1
+    tasks_per_node: 1
+    # CUDA 13 (torch cu130) needs sm_75+; excludes volta (V100) and pascal.
+    constraint: "ampere|hopper|turing|rtx"
+    array_parallelism: 16
+    setup:
+      - export PATH="$HOME/.local/bin:$PATH"
+      - export WANDB_DIR="/data/tau/iceberg_1/titanic_1/users/$USER/staq/wandb"
+      - mkdir -p "$WANDB_DIR"

@@ -72,6 +72,23 @@ def stable_kl_div(old_probs, new_probs, epsilon=1e-12, lib=torch):
     kl = new_probs * (lib.log(new_probs + epsilon) - lib.log(old_probs + epsilon))
     return kl
 
+def kl_loss(student_logits, target_logits) -> torch.Tensor:
+    """
+    Compute the Kullback-Leibler (KL) divergence loss between the student and target logits.
+
+    Args:
+        student_logits (torch.Tensor): The logits from the student network.
+        target_logits (torch.Tensor): The logits from the target network.
+
+    Returns:
+        torch.Tensor: The computed KL divergence loss.
+    """
+    student_log_probs = torch.log_softmax(student_logits, dim=-1)
+    target_probs = torch.softmax(target_logits, dim=-1)
+    
+    kl_div = torch.sum(target_probs * (torch.log(target_probs + 1e-10) - student_log_probs), dim=-1)
+    
+    return kl_div.mean()
 
 class ChannelsFirst(gym.ObservationWrapper):
     def __init__(self, env):
