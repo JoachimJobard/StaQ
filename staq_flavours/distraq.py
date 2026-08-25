@@ -80,7 +80,7 @@ def main(cfg: DictConfig):
     run_cfg = cast(DistraQConfig, OmegaConf.to_object(cfg))
     if run_cfg.wandb:
         import wandb
-        wandb.init(project="DistraQ", name=run_cfg.run_name, config=cast(dict, OmegaConf.to_container(cfg, resolve=True)),
+        wandb.init(project=run_cfg.wandb_project, name=run_cfg.run_name, config=cast(dict, OmegaConf.to_container(cfg, resolve=True)),
                    sync_tensorboard=True, group=run_cfg.run_name.rsplit('_s', 1)[0])
     DistraQTrainer(run_cfg, logging_path=hydra.utils.get_original_cwd()).run()
 

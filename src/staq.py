@@ -4,8 +4,10 @@ from typing import cast
 import hydra
 import numpy as np
 import torch
+from gymnasium.spaces import Discrete
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
+from torch.optim.adam import Adam
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
@@ -34,7 +36,9 @@ class StaQTrainer:
         self.device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
 
         self.env, self.env_eval, self.obs_type = make_envs(cfg.env_name)
-        self.n_act = self.env.action_space.n
+        assert isinstance(self.env.action_space, Discrete)
+        assert self.env.observation_space.shape is not None
+        self.n_act = int(self.env.action_space.n)
         self.s_dim = self.env.observation_space.shape if cfg.network_type == "cnn" else self.env.observation_space.shape[0]
 
         self.sampler = Sampler(self.env)
@@ -236,7 +240,7 @@ class StaQTrainer:
 
     def _init_qfuncs(self):
         self.qfuncs = self._make_qfuncs()
-        self.q_optim = torch.optim.Adam([p for qfunc in self.qfuncs for p in qfunc.parameters()], lr=self.cfg.lr, weight_decay=self.cfg.l2_weight)
+        self.q_optim = Adam([p for qfunc in self.qfuncs for p in qfunc.parameters()], lr=self.cfg.lr, weight_decay=self.cfg.l2_weight)
         self.qtars = update_target(self.qfuncs, update_type='hard') # initialize as the first q funcs
 
     def _extra_grad_step(self, db, targets, nologits, idxs):
@@ -275,8 +279,8 @@ class StaQTrainer:
             act = np.random.randint(self.qfuncs[0].output_size)
         return act, entrop
 
-    def get_logits_ensemble_torch(self,qfuncs, obs, no_old=False):
-        return sum([qfunc.get_logits(obs, no_old) for qfunc in qfuncs]) / len(qfuncs)
+    def get_logits_ensemble_torch(self,qfuncs, obs, no_old=False) -> torch.Tensor:
+        return torch.stack([qfunc.get_logits(obs, no_old) for qfunc in qfuncs]).mean(0)
 
     @property
     def iter(self) -> int:
