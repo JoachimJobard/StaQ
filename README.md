@@ -4,7 +4,7 @@ Official code for the paper accepted at the **Reinforcement Learning Conference 
 
 _Alex Davey, Alena Shilova, Brahim Driss, Riad Akrour_
 
-**Paper:** [RLC (coming soon)](#) | [arXiv](https://arxiv.org/abs/2506.13862)
+**Paper:** [arXiv](https://arxiv.org/abs/2506.13862)
 
 <p align="center">
   <img src="assets/staq-overview.png" alt="Overview of the StaQ policy evaluation and stacked policy update" width="50%"/>
