@@ -72,6 +72,14 @@ def stable_kl_div(old_probs, new_probs, epsilon=1e-12, lib=torch):
     kl = new_probs * (lib.log(new_probs + epsilon) - lib.log(old_probs + epsilon))
     return kl
 
+def mse(student_logits, target_logits):
+    return (student_logits-target_logits).pow(2).sum(-1).mean()
+
+def centered_mse(student_logits, target_logits):
+    diff = student_logits - target_logits
+    diff -= diff.mean(-1, keepdim=True)
+    return diff.pow(2).sum(-1).mean()
+
 def kl_loss(student_logits, target_logits) -> torch.Tensor:
     """
     Compute the Kullback-Leibler (KL) divergence loss between the student and target logits.

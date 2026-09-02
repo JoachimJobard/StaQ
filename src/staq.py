@@ -122,33 +122,33 @@ class StaQTrainer:
 
             with torch.no_grad():
                 # sample next action
-                nol = nologits[idxs]
-                nopol = torch.distributions.Categorical(logits=nol)
+                new_observations_logits = nologits[idxs]
+                new_observation_policy = torch.distributions.Categorical(logits=new_observations_logits)
                 ## ----- Getting V(no) ------
-                na = nopol.sample().view(-1, 1)
-                qnos = [qall.gather(dim=1, index=na) for qall in next_qalls]
+                new_actions = new_observation_policy.sample().view(-1, 1)
+                q_new_observations = [qall.gather(dim=1, index=new_actions) for qall in next_qalls]
 
-                ent_term = self.eweight * nopol.entropy()[:, None]
+                ent_term = self.eweight * new_observation_policy.entropy()[:, None]
 
             scaled_rwd = self.cfg.rwd_scale * db.rwd
             if self.cfg.mode == 'mean':
-                targ = sum([qno.detach() for qno in qnos]) / self.cfg.n_ensemble
+                targ = sum([qno.detach() for qno in q_new_observations]) / self.cfg.n_ensemble
                 targ = scaled_rwd + self.cfg.gamma * (1 - db.terminated) * (targ + ent_term)
                 lossq = torch.stack([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
                         for qall in curr_qalls]).mean()
             else:
-                targ = torch.hstack([qno.detach() for qno in qnos]).min(1, True)[0]
+                targ = torch.hstack([qno.detach() for qno in q_new_observations]).min(1, True)[0]
                 targ = scaled_rwd + self.cfg.gamma * (1 - db.terminated) * (targ + ent_term)
                 lossq = torch.stack([(qall.gather(dim=1, index=db.act) - targ).pow(2).mean()
                                 for qall in curr_qalls]).mean()
 
-            loss_logqdist = (((self.eweight * nol - sum(next_qalls) / self.cfg.n_ensemble) ** 2) * (1 - db.terminated)).mean()
+            loss_logqdist = (((self.eweight * new_observations_logits - sum(next_qalls) / self.cfg.n_ensemble) ** 2) * (1 - db.terminated)).mean()
             lossq.backward()
 
             if grad_steps % 100 == 0:
                 self._log('loss/bellerror', lossq.item(), int(self.cfg.udr * (self.total_trans - self.cfg.trans_per_iter)) + grad_steps)
                 self._log('loss/logqdist', loss_logqdist.item(), int(self.cfg.udr * (self.total_trans - self.cfg.trans_per_iter)) + grad_steps)
-                nopol_probs = cast(torch.Tensor, nopol.probs)
+                nopol_probs = cast(torch.Tensor, new_observation_policy.probs)
                 self._log('loss/nb_prob_act_u0.01', (nopol_probs < 0.01).sum() / self.cfg.batch_size, int(self.cfg.udr * (self.total_trans - self.cfg.trans_per_iter)) + grad_steps)
                 self._log('loss/max_q_ratio', max_q_ratio, int(self.cfg.udr * (self.total_trans - self.cfg.trans_per_iter)) + grad_steps)
 

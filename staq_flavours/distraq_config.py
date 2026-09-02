@@ -16,12 +16,13 @@ class StudentConfig:
     channels: list[int] | None = None # For CNN and minatar, none = reuse teacher config
     kernel_size:list[int] | None = None
     strides:list[int] | None = None
+    loss:str = "kl" #options are kl, mse, centered_mse
 
 @dataclass
 class DistraQConfig(AppConfig):
     student: StudentConfig = field(default_factory=StudentConfig)
     run_name: str = ("${env_name}_d${student.depth}_w${student.width}"
-                     "_dsteps${student.distil_steps}_s${seed}")
+                     "_dsteps${student.distil_steps}_s${seed}_loss{student.loss}")
 
 cs = ConfigStore.instance()
 cs.store(name="distraq_config", node=DistraQConfig)

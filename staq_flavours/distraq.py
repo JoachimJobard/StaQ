@@ -9,7 +9,7 @@ from torch.optim.adam import Adam
 
 from src.networks.distraq_net import DistraQNet
 from src.staq import StaQTrainer
-from src.utils.rl_tools import kl_loss
+from src.utils.rl_tools import centered_mse, kl_loss, mse
 from staq_flavours.distraq_config import DistraQConfig
 
 
@@ -27,7 +27,7 @@ class DistraQTrainer(StaQTrainer):
                            kl_weight = self.cfg.kl_weight,
                            entropy_weight = self.cfg.init_ew,
                            use_w_correction=self.cfg.w_correction,
-                           cfg_student=self.cfg.student, #TODO: fix this config thing, like in storaq
+                           cfg_student=self.cfg.student,
                            device=self.device,
                            network_type=self.cfg.network_type,
                            cnn_config=self.cnn_config) for _ in range(self.cfg.n_ensemble)]
@@ -45,24 +45,30 @@ class DistraQTrainer(StaQTrainer):
         obs = self.repmem.sample(n, device=self.device).obs
         before, after = [], []
         for q in self.qfuncs:
-            scale = q.eta * q.w_correction
             with torch.no_grad():
+                # kl_loss softmaxes both arguments, so target stays as raw logits.
                 target = q.decay * q.student(obs) + q(obs)
-                target = target.log_softmax(dim=-1)
-                before.append(kl_loss(q.student(obs)*scale, target*scale).item())
+                before.append(kl_loss(q.student(obs) * q.eta, target * q.eta).item())
 
             q.student.train(True)  # set student to training mode
             for step in range(self.cfg.student.distil_steps):   
                 idx = torch.randint(0, len(obs), (self.cfg.student.batch_size,), device=self.device)
-                student_logits_batch = q.student(obs[idx]) * q.eta * q.w_correction       
+                student_logits_batch = q.student(obs[idx]) * q.eta    
                 # Compute the KL divergence loss
-                target_batch = target[idx] * q.eta * q.w_correction
-                loss = kl_loss(student_logits_batch, target_batch)
+                target_batch = target[idx] * q.eta
+                if q.cfg_student.loss ==  "kl":
+                    loss = kl_loss(student_logits_batch, target_batch)
+                elif q.cfg_student.loss == "mse":
+                    loss = mse(student_logits_batch, target_batch)
+                elif q.cfg_student.loss in ["centered-mse","centered_mse"]:
+                    loss = centered_mse(student_logits_batch, target_batch)
+                else:
+                    raise NotImplementedError
                 loss.backward()
                 self.student_optimizer.step()
                 self.student_optimizer.zero_grad()
             with torch.no_grad():
-                after.append(kl_loss(q.student(obs)*scale, target*scale).item())
+                after.append(kl_loss(q.student(obs)*q.eta, target*q.eta).item())
         self._log('distil/kl_loss_before', float(np.mean(before)), self.total_trans)
         self._log('distil/kl_loss_after', float(np.mean(after)), self.total_trans)
 
@@ -86,4 +92,3 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-            
