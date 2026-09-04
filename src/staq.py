@@ -2,8 +2,12 @@ from time import time
 from typing import cast
 
 import hydra
+import matplotlib
 import numpy as np
 import torch
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from gymnasium.spaces import Discrete
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
@@ -36,6 +40,7 @@ class StaQTrainer:
         self.device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
 
         self.env, self.env_eval, self.obs_type = make_envs(cfg.env_name)
+        _, self.env_diag, _ = make_envs(cfg.env_name)
         assert isinstance(self.env.action_space, Discrete)
         assert self.env.observation_space.shape is not None
         self.n_act = int(self.env.action_space.n)
@@ -43,6 +48,7 @@ class StaQTrainer:
 
         self.sampler = Sampler(self.env)
         self.sampler_eval = Sampler(self.env_eval)
+        self.sampler_diag = Sampler(self.env_diag)
 
         print('logging path', logging_path)
         self.logger = SummaryWriter(logging_path)
@@ -64,11 +70,13 @@ class StaQTrainer:
             self._collect_rollouts()
             old_logits_tilde, testb, old_dist = self._policy_snapshot()
             self.training_start_time = time()
-            nologits, precompute_time_elapsed = self._precompute_logits()
-            self._train(nologits)
+            new_observation_logits, precompute_time_elapsed = self._precompute_logits()
+            self._train(new_observation_logits)
             training_time_elapsed = self._update_staq_networks(old_logits_tilde, testb, old_dist)
             if self.total_trans % self.cfg.eval_interval == 0:
                 self.evaluate_policy()
+            if self.total_trans % (self.cfg.timesteps // 4) == 0:
+                self._log_hist_distribution()
             self.total_time_elapsed += time() - total_start_time
 
             self._log("timings/precompute", precompute_time_elapsed, self.total_trans)
@@ -262,6 +270,60 @@ class StaQTrainer:
 
     def _log(self, tag, value, step=None):
         self.logger.add_scalar(tag, value, self.total_trans if step is None else step)
+
+    def _log_hist_distribution(self, n_episodes: int = 5):
+        """Log how the policy's action distribution evolves along an evaluation episode.
+
+        Runs `n_episodes` full episodes under the softmax policy and keeps the best
+        and the median one by return -- the median is the honest one, the best shows
+        what the policy looks like when it works. For each, two heatmaps of shape
+        (episode_step, n_act):
+
+          * `sorted`  -- probabilities sorted per state, so row 0 is "the top action's
+            probability, whichever action that is". Reads as pointiness over time and
+            is immune to the argmax switching between steps.
+          * `actions` -- the same probabilities unsorted, so row a is action a. Reads
+            as behaviour: which action is preferred, and when the preference flips.
+
+        Called rarely (a handful of times per run), so full episodes are affordable
+        and no fixed transition budget is needed.
+        """
+        [qfunc.train(False) for qfunc in self.qfuncs]
+        episodes = []
+        for _ in range(n_episodes):
+            paths, returns, _ = self.sampler_eval.rollouts(self.numpy_softmax, 1, np.inf, returns_only=False)
+            assert isinstance(paths, dict), "returns_only must stay False here"
+            if returns:  # an episode that did not terminate contributes no return
+                episodes.append((returns[0].value, paths['obs']))
+        if not episodes:
+            return
+
+        episodes.sort(key=lambda ep: ep[0])
+        for label, (ep_return, obs) in (('best', episodes[-1]),
+                                        ('median', episodes[len(episodes) // 2])):
+            with torch.no_grad():
+                probs = self.get_logits_ensemble_torch(self.qfuncs, obs).softmax(-1)  # (T, n_act)
+            self._log_prob_heatmap(f'policy/{label}_sorted',
+                                   probs.sort(-1, descending=True).values, 'rank', ep_return)
+            self._log_prob_heatmap(f'policy/{label}_actions', probs, 'action', ep_return)
+
+    def _log_prob_heatmap(self, tag, mat, ylabel, ep_return):
+        """One (episode_step, n_act) probability matrix as a heatmap, under a stable tag.
+
+        Reusing the tag across calls makes wandb render a single media panel with a
+        slider over training, rather than one orphaned panel per logging point.
+        """
+        fig, ax = plt.subplots(figsize=(9, 2.4))
+        im = ax.imshow(mat.T.cpu().numpy(), aspect='auto', origin='lower',
+                       vmin=0., vmax=1., interpolation='nearest')
+        ax.set_xlabel('episode step')
+        ax.set_ylabel(ylabel)
+        ax.set_yticks(range(self.n_act))
+        ax.set_title(f'{tag} | return {ep_return:.0f} | T={mat.shape[0]}')
+        fig.colorbar(im, ax=ax, label='probability')
+        fig.tight_layout()
+        self.logger.add_figure(tag, fig, self.total_trans)
+        plt.close(fig)  # add_figure does not close it; 4 leaked figures per call adds up
 
     def numpy_softmax(self, obs):
         dist = self._ensemble_dist(obs)

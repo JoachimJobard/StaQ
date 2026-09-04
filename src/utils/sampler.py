@@ -21,19 +21,19 @@ class Sampler:
     def _rollout(self):
         # Generates SARSA type transitions until episode's end
         assert self.policy is not None, "Policy must be set before calling _rollout."
-        obs, _ = self.env.reset()
-        act, entr = self.policy(obs)
+        observation, _ = self.env.reset()
+        action, entropy = self.policy(observation)
         done = False
         step = 0
         while not done:
             step += 1
-            nobs, rwd, terminated, truncated, _ = self.env.step(act)
+            next_observation, rwd, terminated, truncated, _ = self.env.step(action)
             self.max_abs_reward = max(self.max_abs_reward, np.abs(rwd))
-            nact, nent = self.policy(nobs)
-            yield self.Trans(obs, act, rwd, terminated, truncated, nobs, nact), entr, step
-            obs = nobs
-            act = nact
-            entr = nent
+            next_action, next_entropy = self.policy(next_observation)
+            yield self.Trans(observation, action, rwd, terminated, truncated, next_observation, next_action), entropy, step
+            observation = next_observation
+            action = next_action
+            entropy = next_entropy
             done = terminated or truncated
 
     def rollouts(self, policy, min_trans, max_trans, returns_only=False):

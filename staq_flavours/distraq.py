@@ -4,6 +4,7 @@ from typing import cast
 import hydra
 import numpy as np
 import torch
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from torch.optim.adam import Adam
 
@@ -88,7 +89,8 @@ def main(cfg: DictConfig):
         import wandb
         wandb.init(project=run_cfg.wandb_project, name=run_cfg.run_name, config=cast(dict, OmegaConf.to_container(cfg, resolve=True)),
                    sync_tensorboard=True, group=run_cfg.run_name.rsplit('_s', 1)[0])
-    DistraQTrainer(run_cfg, logging_path=hydra.utils.get_original_cwd()).run()
+    logging_path = HydraConfig.get().runtime.output_dir
+    DistraQTrainer(run_cfg, logging_path).run()
 
 if __name__ == "__main__":
     main()
