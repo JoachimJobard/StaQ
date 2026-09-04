@@ -10,7 +10,7 @@ from torch.optim.adam import Adam
 
 from src.networks.distraq_net import DistraQNet
 from src.staq import StaQTrainer
-from src.utils.rl_tools import centered_mse, kl_loss, mse
+from src.utils.rl_tools import centered_l1, centered_mse, kl_loss
 from staq_flavours.distraq_config import DistraQConfig
 
 
@@ -59,8 +59,8 @@ class DistraQTrainer(StaQTrainer):
                 target_batch = target[idx] * q.eta
                 if q.cfg_student.loss ==  "kl":
                     loss = kl_loss(student_logits_batch, target_batch)
-                elif q.cfg_student.loss == "mse":
-                    loss = mse(student_logits_batch, target_batch)
+                elif q.cfg_student.loss == "centered_l1":
+                    loss = centered_l1(student_logits_batch, target_batch)
                 elif q.cfg_student.loss in ["centered-mse","centered_mse"]:
                     loss = centered_mse(student_logits_batch, target_batch)
                 else:

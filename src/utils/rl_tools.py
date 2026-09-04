@@ -80,6 +80,11 @@ def centered_mse(student_logits, target_logits):
     diff -= diff.mean(-1, keepdim=True)
     return diff.pow(2).sum(-1).mean()
 
+def centered_l1(student_logits, target_logits):
+    diff = student_logits - target_logits
+    diff -= diff.mean(-1, keepdim=True)
+    return diff.abs().sum(-1).mean()
+
 def kl_loss(student_logits, target_logits) -> torch.Tensor:
     """
     Compute the Kullback-Leibler (KL) divergence loss between the student and target logits.
