@@ -291,7 +291,7 @@ class StaQTrainer:
         [qfunc.train(False) for qfunc in self.qfuncs]
         episodes = []
         for _ in range(n_episodes):
-            paths, returns, _ = self.sampler_eval.rollouts(self.numpy_softmax, 1, np.inf, returns_only=False)
+            paths, returns, _ = self.sampler_diag.rollouts(self.numpy_softmax, 1, np.inf, returns_only=False)
             assert isinstance(paths, dict), "returns_only must stay False here"
             if returns:  # an episode that did not terminate contributes no return
                 episodes.append((returns[0].value, paths['obs']))
@@ -302,7 +302,7 @@ class StaQTrainer:
         for label, (ep_return, obs) in (('best', episodes[-1]),
                                         ('median', episodes[len(episodes) // 2])):
             with torch.no_grad():
-                probs = self.get_logits_ensemble_torch(self.qfuncs, obs).softmax(-1)  # (T, n_act)
+                probs = self.get_logits_ensemble_torch(self.qfuncs, obs.to(self.device)).softmax(-1)  # (T, n_act)
             self._log_prob_heatmap(f'policy/{label}_sorted',
                                    probs.sort(-1, descending=True).values, 'rank', ep_return)
             self._log_prob_heatmap(f'policy/{label}_actions', probs, 'action', ep_return)
