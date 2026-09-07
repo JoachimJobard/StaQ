@@ -48,7 +48,10 @@ for d in "${DIRS[@]}"; do
         continue
     fi
     echo "=== syncing $name"
-    if fuv run wandb sync --sync-tensorboard -p "$PROJECT" "$d"; then
+    # --legacy is REQUIRED: without it the call is rerouted to `wandb beta sync`,
+    # which only uploads .wandb files and ignores --sync-tensorboard (legacy-only),
+    # producing a run with the raw event file attached and nothing parsed out of it.
+    if fuv run wandb sync --legacy --sync-tensorboard -p "$PROJECT" "$d"; then
         ok=$((ok + 1))
     else
         failed=$((failed + 1)); failed_dirs+=("$name")
