@@ -13,6 +13,7 @@ class StudentConfig:
     width: int = 256
     distil_states: int = 10_000
     batch_size: int = 256
+    keep_archive:bool = False # to compare with staq
     channels: list[int] | None = None # For CNN and minatar, none = reuse teacher config
     kernel_size:list[int] | None = None
     strides:list[int] | None = None

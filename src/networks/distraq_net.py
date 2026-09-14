@@ -55,9 +55,14 @@ class DistraQNet(StaQNet):
         """no_old is purely a placeholder from inheritance here"""
         return self.student(x) * self.eta * self.w_correction 
 
+    def get_staq_logits(self, x, no_old=False):
+        return super().get_logits(x, no_old)
+
     def update_sigq(self, decay=True):
-        # Update the frozen features and frozen Q function
-        self.train_feat.train(False)
+        if self.cfg_student.keep_archive:
+            super().update_sigq(decay=decay)
+        else:
+            self.train_feat.train(False)
 
 
 
