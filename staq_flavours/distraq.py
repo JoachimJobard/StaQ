@@ -11,7 +11,7 @@ from torch.optim.adam import Adam
 
 from src.networks.distraq_net import DistraQNet
 from src.staq import StaQTrainer
-from src.utils.rl_tools import centered_l1, centered_mse, kl_loss
+from src.utils.rl_tools import centered_l1, centered_mse, kl_loss, reverse_kl_loss
 from staq_flavours.distraq_config import DistraQConfig
 
 # Distillation objectives, keyed by cfg.student.loss. Resolved once in _init_qfuncs,
@@ -21,6 +21,7 @@ DISTIL_LOSSES = {
     "centered_mse": centered_mse,
     "centered-mse": centered_mse,
     "centered_l1": centered_l1,
+    "reverse_kl": reverse_kl_loss,
 }
 
 

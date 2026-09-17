@@ -103,6 +103,13 @@ def kl_loss(student_logits, target_logits) -> torch.Tensor:
     
     return kl_div.mean()
 
+def reverse_kl_loss(student_logits: torch.Tensor, target_logits:torch.Tensor) -> torch.Tensor:
+    student_probs = torch.softmax(student_logits, dim=-1)
+    target_log_probs = torch.log_softmax(target_logits, dim=-1)
+
+    kl_div = torch.sum(student_probs * (torch.log(student_probs + 1e-10) - target_log_probs), dim=-1)
+    return kl_div.mean()
+
 class ChannelsFirst(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)

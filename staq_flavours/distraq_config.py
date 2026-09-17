@@ -17,7 +17,7 @@ class StudentConfig:
     channels: list[int] | None = None # For CNN and minatar, none = reuse teacher config
     kernel_size:list[int] | None = None
     strides:list[int] | None = None
-    loss:str = "kl"  # options: kl, centered_mse, centered_l1 (see _distil)
+    loss:str = "kl"  # options: kl, reversed_kl, centered_mse, centered_l1 (see _distil)
 
 @dataclass
 class DistraQConfig(AppConfig):
