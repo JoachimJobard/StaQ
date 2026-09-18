@@ -20,8 +20,8 @@ def update_target(sources, targets: list|None=None, tau: float|None=None, update
     elif update_type == 'soft':
         assert targets is not None, "Targets must be provided for soft updates."
         assert tau is not None, "Tau must be provided for soft updates."
-        for source, target in zip(sources, targets):
-            for target_param, param in zip(target.parameters(), source.parameters()):
+        for source, target in zip(sources, targets, strict=False):
+            for target_param, param in zip(target.parameters(), source.parameters(), strict=False):
                 target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
     else:
         raise ValueError(f'Update type must be "hard" or "soft", not "{update_type}"')
@@ -46,6 +46,14 @@ def make_envs(env_name)->tuple[gym.Env, gym.Env, torch.dtype]:
         env_eval = gym.make(env_name)
 
     return env, env_eval, obs_type
+
+def make_continuous_envs(env_name) -> tuple[gym.Env, gym.Env, torch.dtype]:
+    """Native continuous control: same envs as make_envs but WITHOUT ContToDiscreteActWrap,
+    which collapses the action space to 2*dim+1 bang-bang choices."""
+    env, env_eval = gym.make(env_name), gym.make(env_name)
+    assert isinstance(env.action_space, gym.spaces.Box), f"{env_name} is not a continuous env"
+    return env, env_eval, torch.float32
+
 
 def make_network_type(network_type:str, env_name:str):
     #old hardcoded network type selection, could be improved to be more flexible
@@ -98,9 +106,9 @@ def kl_loss(student_logits, target_logits) -> torch.Tensor:
     """
     student_log_probs = torch.log_softmax(student_logits, dim=-1)
     target_probs = torch.softmax(target_logits, dim=-1)
-    
+
     kl_div = torch.sum(target_probs * (torch.log(target_probs + 1e-10) - student_log_probs), dim=-1)
-    
+
     return kl_div.mean()
 
 def reverse_kl_loss(student_logits: torch.Tensor, target_logits:torch.Tensor) -> torch.Tensor:
@@ -127,9 +135,9 @@ class ContToDiscreteActWrap(gym.ActionWrapper):
         self.dim_base = len(self.neutral_action)
         self.action_space = gym.spaces.Discrete(2 * self.dim_base + 1)
 
-    def action(self, a):
+    def action(self, action):  # name must match gym.ActionWrapper.action
         act = self.neutral_action.copy()
-        if a:
-            ind = (a - 1) % self.dim_base
-            act[ind] = self.env.action_space.low[ind] if a <= self.dim_base else self.env.action_space.high[ind] # type: ignore
+        if action:
+            ind = (action - 1) % self.dim_base
+            act[ind] = self.env.action_space.low[ind] if action <= self.dim_base else self.env.action_space.high[ind] # type: ignore
         return act

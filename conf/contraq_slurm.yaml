@@ -1,0 +1,60 @@
+# tau-cluster entry point for ContraQ (continuous DistraQ, Design A).
+#
+#   uv run python -m staq_flavours.contraq --config-name=contraq_slurm -m \
+#       env_name=Walker2d-v4 anchor=sum,policy seed=0,1,2
+#
+# The hydra.launcher block is duplicated in conf/distraq_slurm.yaml and
+# conf/staq_slurm.yaml -- change them together.
+defaults:
+  - contraq
+  - override hydra/launcher: submitit_slurm
+  - _self_
+
+device: cuda
+
+# Matched to conf/env/walker2d.yaml, the condition discrete StaQ/DistraQ run on MuJoCo,
+# so the comparison differs only in algorithm + action space.
+lr: 0.0001
+kl_weight: 10.0
+mode: min
+end_decay: 1000000
+timesteps: 5000000
+eval_interval: 100000
+batch_size: 256
+target_type: hard
+rwd_scale: 1.0        # NOT walker2d's 10.0: redundant with ew, only rwd_scale/ew matters
+init_ew: 1.0          # ~= discrete 2.0/log(2*a_dim+1), and ~= SAC's alpha
+final_ew: 0.2         # ~= discrete 0.4/log(2*a_dim+1) = 0.14..0.21 across these envs
+
+critic:
+  depth: 2
+  width: 256          # matches DistraQ's teacher (nb_hidden=2, hidden_width=256)
+  lr: 0.0001
+student:
+  depth: 2
+  width: 512          # matches the DistraQ student sweep
+  steps: 1000
+  lr: 0.0003
+actor:
+  depth: 2
+  width: 256
+  steps: 200
+  lr: 0.0003
+
+hydra:
+  sweep:
+    dir: /data/tau/iceberg_1/titanic_1/users/${oc.env:USER}/staq/multirun/${now:%Y-%m-%d_%H-%M-%S}
+  launcher:
+    partition: tau,gpu-best
+    timeout_min: 1440
+    cpus_per_task: 8
+    mem_gb: 32
+    gpus_per_node: 1
+    nodes: 1
+    tasks_per_node: 1
+    constraint: "ampere|hopper|turing|rtx"
+    array_parallelism: 16
+    setup:
+      - export PATH="$HOME/.local/bin:$PATH"
+      - export WANDB_DIR="/data/tau/iceberg_1/titanic_1/users/$USER/staq/wandb"
+      - mkdir -p "$WANDB_DIR"

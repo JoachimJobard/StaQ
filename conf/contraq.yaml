@@ -1,0 +1,31 @@
+# Local entry point for ContraQ: continuous-action DistraQ.
+#
+#   uv run python -m staq_flavours.contraq env_name=Walker2d-v4
+#   uv run python -m staq_flavours.contraq -m env_name=Walker2d-v4 anchor=sum,policy seed=0,1,2
+#
+# anchor=sum is Design A (the distilled sum is the target energy); anchor=policy is MDPO.
+# kl_weight=0 collapses to SAC, so it is the natural low end of a kl_weight sweep.
+defaults:
+  - contraq_config
+  - _self_
+
+env_name: Walker2d-v4
+network_type: mlp
+wandb: true
+wandb_project: contraq
+
+lr: 3e-4              # critic
+rwd_scale: 1.0        # no discrete Q head to keep in range; keep rewards as the env gives them
+timesteps: 1000000
+trans_per_iter: 5000
+eval_interval: 50000
+end_decay: 500000
+
+hydra:
+  run:
+    dir: outputs/${run_name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${run_name}
+  job:
+    chdir: false

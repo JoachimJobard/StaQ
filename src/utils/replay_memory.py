@@ -5,8 +5,12 @@ import torch
 
 
 class ReplayMemory:
-    def __init__(self, max_size, state_shape, device, obs_type=torch.float32):
+    def __init__(self, max_size, state_shape, device, obs_type=torch.float32,
+                 action_dim=1, action_dtype=torch.long):
+        # action_dim/action_dtype default to the discrete case (one integer index);
+        # continuous flavours pass the action dimension and torch.float32.
         self.device = device
+        self.action_dtype = action_dtype
         self.max_size = max_size
         self.size = 0
         self.write_idx = 0
@@ -19,7 +23,7 @@ class ReplayMemory:
 
         self.repmem = self.ReplayMemorySamples(
             obs=torch.zeros(max_size, *state_shape, device=self.device, dtype=obs_type),
-            act=torch.zeros(max_size, 1, device=self.device).long(),
+            act=torch.zeros(max_size, action_dim, device=self.device, dtype=action_dtype),
             rwd=torch.zeros(max_size, 1, device=self.device),
             terminated=torch.zeros(max_size, 1, device=self.device),
             nobs=torch.zeros(max_size, *state_shape, device=self.device, dtype=obs_type),
@@ -31,10 +35,7 @@ class ReplayMemory:
         len_first_copy = self.max_size - self.write_idx
         data = self.repmem._asdict()
         for k in data:
-            if k == 'act':
-                v = trans[k].long()
-            else:
-                v = trans[k]
+            v = trans[k].to(self.action_dtype) if k == 'act' else trans[k]
             if overflow:
                 data[k][self.write_idx:] = v[:len_first_copy]
                 data[k][0:add_len - len_first_copy] = v[len_first_copy:]
@@ -64,7 +65,7 @@ class ReplayMemory:
 
     def sample(self, batch_size, device=None):
         return self.sample_with_idxs(batch_size, device)[0]
-    
+
     def _get_idexes(self, start_idx, end_idx):  # start and end indexes are relative to how old is the data
         assert start_idx < end_idx
         datastarts = self.write_idx if self.size == self.max_size else 0
