@@ -71,6 +71,14 @@ class ContraQTrainer:
         self.student_optim = Adam([p for c in self.critics for p in c.student.parameters()],
                                   lr=cfg.student.lr)
         self.qtars = update_target(self.critics, update_type='hard')
+        # Target students: what the actor's energy is read from. Starts equal to the live
+        # students, and stays equal when student.polyak == 1.0.
+        self.student_tars = [deepcopy(c.student) for c in self.critics]
+        for tar in self.student_tars:
+            tar.train(False)
+            for p_t in tar.parameters():
+                p_t.requires_grad_(False)
+        self.mass = 0.0   # accumulated geometric weight in S; mass_k = lam_k*mass_{k-1} + 1
 
         self.repmem = ReplayMemory(cfg.rep_mem_size, self.s_dim, self.device,
                                    obs_type=self.obs_type, action_dim=self.a_dim,
@@ -169,6 +177,7 @@ class ContraQTrainer:
         batch = self.repmem.sample(n, device=self.device)   # ONE sample: obs and act must correspond
         obs, act = batch.obs, self._distil_actions(batch.obs)
         residuals = []
+        self.mass = self.critics[0].decay * self.mass + 1.0   # one new term enters S below
         for c in self.critics:
             with torch.no_grad():
                 target = c.decay * c.forward_student(obs, act) + c(obs, act)
@@ -181,7 +190,16 @@ class ContraQTrainer:
                 self.student_optim.step()
             with torch.no_grad():
                 residuals.append(((c.forward_student(obs, act) - target) * c.eta).abs().mean().item())
+        # Polyak the target students AFTER distillation: with polyak=1.0 the target is the
+        # live student, which is the behaviour this reproduces exactly.
+        tau = self.cfg.student.polyak
+        with torch.no_grad():
+            for tar, c in zip(self.student_tars, self.critics, strict=True):
+                for p_t, p_s in zip(tar.parameters(), c.student.parameters(), strict=True):
+                    p_t.data.mul_(1.0 - tau).add_(tau * p_s.data)
         self._log('distil/abs_residual', float(np.mean(residuals)))
+        self._log('distil/mass', self.mass)
+        self._log('distil/mass_weight', self._mass_weight())
         self._log('timings/distil', time() - t0)
 
     def _student_loss(self, pred, target, obs):
@@ -194,11 +212,28 @@ class ContraQTrainer:
         return d.pow(2).mean()
 
     # ---------------------------------------------------------------- actor
+    def _mass_weight(self) -> float:
+        """Rescale the energy so realised sharpness matches the steady state.
+
+        S_k ~ mass_k * Qbar while the intended scale is Qbar/(1-lambda), so the ratio is
+        mass_k*(1-lambda). The recursion (not the closed form (1-lam**k)/(1-lam)) is used
+        because lambda changes every iteration with the ew schedule, and the worst deficit
+        is caused precisely by that change.
+        """
+        if not self.cfg.mass_correction or self.mass <= 0.0:
+            return 1.0
+        lam = self.critics[0].decay
+        w = 1.0 / max(self.mass * (1.0 - lam), 1e-9)
+        cap = self.cfg.mass_correction_cap
+        return min(w, cap) if cap > 0 else w
+
     def _energy(self, s, a):
         """min over members: this is the point of use, where pessimism stops the actor
         exploiting the students' errors off the data distribution."""
-        e = torch.cat([c.forward_student(s, a) for c in self.critics], dim=-1)
-        return e.mean(-1, keepdim=True) if self.cfg.mode == 'mean' else e.min(-1, keepdim=True).values
+        x = torch.cat([s, a], dim=-1)
+        e = torch.cat([tar(x) for tar in self.student_tars], dim=-1)
+        e = e.mean(-1, keepdim=True) if self.cfg.mode == 'mean' else e.min(-1, keepdim=True).values
+        return e * self._mass_weight()
 
     def _learn_actor(self):
         t0 = time()
