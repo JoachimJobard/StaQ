@@ -89,7 +89,8 @@ class ContraQTrainer:
             self._update_schedules()
             self._collect_rollouts()
             self._train()
-            self._learn_student()
+            if self.cfg.anchor == 'sum':
+                self._learn_student()   # Design B never reads S; skip the distillation entirely
             self._learn_actor()
             if self.total_trans % self.cfg.eval_interval == 0:
                 self.evaluate_policy()
@@ -136,7 +137,7 @@ class ContraQTrainer:
                                            update_type='soft')
             db = self.repmem.sample(self.cfg.batch_size, device=self.device)
             with torch.no_grad():
-                nact, nlogp, _ = self.actor.get_action(db.nobs)
+                nact, nlogp, _, _ = self.actor.get_action(db.nobs)
                 qnext = torch.cat([tar(db.nobs, nact) for tar in self.qtars], dim=-1)
                 qnext = qnext.mean(-1, keepdim=True) if self.cfg.mode == 'mean' else qnext.min(-1, keepdim=True).values
                 # -eweight * log pi is the entropy bonus; the critic's coefficient is ew,
@@ -202,7 +203,11 @@ class ContraQTrainer:
     def _learn_actor(self):
         t0 = time()
         self.actor.train(True)
-        anchor = deepcopy(self.actor).eval() if self.cfg.anchor == 'policy' else None
+        anchor = None
+        if self.cfg.anchor == 'policy':
+            anchor = deepcopy(self.actor).eval()
+            for p_a in anchor.parameters():
+                p_a.requires_grad_(False)
         for p in [p for c in self.critics for p in list(c.q.parameters()) + list(c.student.parameters())]:
             p.requires_grad_(False)   # freeze params, do NOT detach the energy tensor
         losses, entropies = [], []
@@ -210,16 +215,20 @@ class ContraQTrainer:
             s = self.repmem.sample(self.cfg.actor.batch_size, device=self.device).obs
             if self.cfg.actor.action_samples > 1:
                 s = s.repeat_interleave(self.cfg.actor.action_samples, dim=0)
-            a, logp, _ = self.actor.get_action(s)
+            a, logp, _, _ = self.actor.get_action(s)
             if anchor is None:                      # Design A: energy is the distilled sum
                 loss = (logp - self.eta * self._energy(s, a)).mean()
             else:                                   # Design B / MDPO: anchor on the previous actor
                 lam = self.critics[0].decay
-                with torch.no_grad():
-                    anchor_logp = self._anchor_logp(anchor, s, a)
+                # E[logp - lam*log pi_anchor] rewritten as (1-lam)*E[logp] + lam*KL, with the
+                # KL in closed form. Algebraically identical, but the sampled version is a
+                # near-cancellation whose signal is only (1-lam) ~ 0.02 of the noise, so its
+                # gradient direction is unusable at realistic batch sizes.
+                # One extra actor forward (small MLP) -- negligible next to the critics.
+                kl_anchor = self.actor.gaussian_kl_to(anchor, s)
                 q = torch.cat([c(s, a) for c in self.critics], dim=-1)
                 q = q.mean(-1, keepdim=True) if self.cfg.mode == 'mean' else q.min(-1, keepdim=True).values
-                loss = (logp - lam * anchor_logp - self.eta * q).mean()
+                loss = ((1 - lam) * logp + lam * kl_anchor - self.eta * q).mean()
             self.actor_optimizer.zero_grad()
             loss.backward()
             self.actor_optimizer.step()
@@ -233,27 +242,17 @@ class ContraQTrainer:
             self._log('actor/entropy', float(np.mean(entropies)))
         self._log('timings/actor', time() - t0)
 
-    @staticmethod
-    def _anchor_logp(anchor, s, a):
-        """log pi_anchor(a|s) for actions sampled from the CURRENT actor (inverse tanh)."""
-        mean, log_std = anchor(s)
-        y = ((a - anchor.action_bias) / anchor.action_scale).clamp(-0.999999, 0.999999)
-        x = torch.atanh(y)
-        normal = torch.distributions.Normal(mean, log_std.exp())
-        lp = normal.log_prob(x) - torch.log(anchor.action_scale * (1 - y.pow(2)) + 1e-6)
-        return lp.sum(-1, keepdim=True)
-
     # ---------------------------------------------------------------- policies / eval
     def numpy_policy(self, obs):
         with torch.no_grad():
             s = torch.as_tensor(obs, dtype=torch.float32, device=self.device)[None, :]
-            a, logp, _ = self.actor.get_action(s)
+            a, logp, _, _ = self.actor.get_action(s)
         return a[0].cpu().numpy(), -logp.item()
 
     def numpy_det_policy(self, obs):
         with torch.no_grad():
             s = torch.as_tensor(obs, dtype=torch.float32, device=self.device)[None, :]
-            _, logp, mean = self.actor.get_action(s)
+            _, logp, mean, _ = self.actor.get_action(s)
         return mean[0].cpu().numpy(), -logp.item()
 
     def evaluate_policy(self):
